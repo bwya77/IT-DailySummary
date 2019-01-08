@@ -62,7 +62,7 @@ $ExpiringAccountDays = 7
 #Tells the script whether to gather users that are newly created or not
 $GatherNewlyCreatedUsers = $true
 #Sets the days for what is considered 'newly created' EX: get all users that have been created within the last $UserCreatedDays days
-$UserCreatedDays = 7
+$UserCreatedDays = 2
 
 #Tells the script whether to gather users that have passwords set to never expire or not
 $GatherUsersWithPasswordsNeverSetToExpire = $true
@@ -78,10 +78,10 @@ $GatherUsersWithoutManagers = $true
 #Enables a summary email notification (you will want this enabled unless you only want a basic Teams Message)
 $SendSummaryEmailNotification = $True
 #Sets the recipient for the summary emails
-$SummaryEmailAddress = "IT_Team@TheLazyAdministrator.com"
+$SummaryEmailAddress = "Brad@TheLazyAdministrator.com"
 
 #Enabled a basic summary message to be sent to teams via Webhook
-$SendSummaryTeamMessage = $true
+$SendSummaryTeamMessage = $false
 #Sets the Teams webhook url
 $SummaryTeamWebhookURL = "https://outlook.office.com/webhook/8348ef8d-c544-4dee-9855-b4de08dsf87sd@6988798-bd25-4817-8fd6-98sdf78sdfc1/IncomingWebhook/8189d8f9s8d6cbd81b446c16/5f2b8c07-e613-4e86-bcf6-589d9sd7ad138"
 
@@ -92,10 +92,10 @@ $DisableGraphs = $False
 #SMTP host
 $SMTPHost = "smtp.office365.com"
 #Who the message will be sent from, you will need these credentials or use credentials of an account that has permission to send as this account
-$FromEmail = "PSAutomation@TheLazyAdministrator.com"
+$FromEmail = "Brad@TheLazyAdministrator.com"
 
 #Program Directory path
-$DirPath = "C:\Automation\Master_UserInfo"
+$DirPath = "C:\Automation\Master_DailySummary"
 
 #Exclude accounts, good for service accounts
 $ExcludeUsers = $True
@@ -109,7 +109,6 @@ $ExcludeList = "$DirPath\excludeSamAccountName.txt"
 #							           BEGIN OF SCRIPT	        										   #
 #                                                                                                          #
 ############################################################################################################
-(get-date -Format "dd/MM/yyyy hh:mm:ss") + (": NEW RUN") | Out-File ($DirPath + "\" + "Log.txt") -Append
 
 #Counters
 $Int_LessThan = 0
@@ -217,14 +216,11 @@ $head = @"
 #If the exclude list is not present, and $ExcludeUsers is set to True, then create the flat file
 If (((Test-Path -Path $ExcludeList) -eq $false) -and ($ExcludeUsers -eq $true))
 {
-	(get-date -Format hh:mm:ss) + (": Creating the exclude users file as it is not present") | Out-File ($DirPath + "\" + "Log.txt") -Append
 	New-Item -ItemType file $ExcludeList -Force
 }
-Else
-{
-	(get-date -Format hh:mm:ss) + (": The exclude users flat file is present") | Out-File ($DirPath + "\" + "Log.txt") -Append
-	
-}
+
+(get-date -Format "dd/MM/yyyy hh:mm:ss") + (": NEW RUN") | Out-File ($DirPath + "\" + "Log.txt") -Append -ErrorAction SilentlyContinue
+
 
 (get-date -Format hh:mm:ss) + (": Importing Active Directory module") | Out-File ($DirPath + "\" + "Log.txt") -Append
 Write-Host "Importing ActiveDirectory Module"
@@ -236,9 +232,18 @@ If ($ExcludeUsers -eq $true)
 {
 	(get-date -Format hh:mm:ss) + (": Filter users enabled, getting samaccountname object from $ExcludeList") | Out-File ($DirPath + "\" + "Log.txt") -Append
 	$exclude = Get-Content $ExcludeList
-	$filter = [scriptblock]::create(($exclude | ForEach-Object { "(SamAccountName -notlike '*$_*')" }) -join ' -and ')
-	Write-Host "Getting filtered users..."
-	$Users = Get-ADUser -filter $filter -properties *
+	If ($Null -ne $exclude)
+	{
+		$filter = [scriptblock]::create(($exclude | ForEach-Object { "(SamAccountName -notlike '*$_*')" }) -join ' -and ')
+		Write-Host "Getting filtered users..."
+		$Users = Get-ADUser -filter $filter -properties *
+	}
+	Else
+	{
+		$Users = Get-Aduser -Filter * -properties *
+		
+	}
+	
 }
 Else
 {
@@ -463,9 +468,7 @@ If ($GatherInactiveUsers -eq $True)
 	Write-Host "Working on Inactive Users Report..." -ForegroundColor Yellow
 	
 	#If lastlogondate is not empty, and less than or equal to XX days and enabled
-	#Get-ADUser -properties * -filter { (lastlogondate -like "*" -and lastlogondate -le $InactiveLastLogonDaysAgo) -AND (enabled -eq $True) } | ForEach-Object{
 	$Users | Where-Object { ($_.Lastlogondate -notlike $null) -and ($_.Enabled -eq $true) } | ForEach-Object{
-		
 		
 		$LastLogonDate = [datetime]::FromFileTime($_.LastLogonTimeStamp)
 		(get-date -Format hh:mm:ss) + (": $($_.Name)'s last logon was $LastLogonDate") | Out-File ($DirPath + "\" + "Log.txt") -Append
@@ -537,7 +540,6 @@ If ($GatherPasswordExpiringUsers -eq $True)
 	(get-date -Format hh:mm:ss) + (": Getting users password expiration report") | Out-File ($DirPath + "\" + "Log.txt") -Append
 	Write-Host "Running Password Expiration Report...." -ForegroundColor Yellow
 	
-	#$users = Get-Aduser -properties proxyAddresses, Name, PasswordNeverExpires, PasswordExpired, PasswordLastSet, EmailAddress -filter { (Enabled -eq 'True') -and (PasswordNeverExpires -eq 'False') } | Where-Object { $_.PasswordExpired -eq $False }
 	(get-date -Format hh:mm:ss) + (": Getting domain password policy") | Out-File ($DirPath + "\" + "Log.txt") -Append
 	
 	Write-Host "Getting domain password policy"
@@ -704,7 +706,7 @@ To change your password, follow the method below:
 <ol>
   <li>If you are not in the office, logon and connect to VPN.</li>
 		<ul>
-  			<li><b>NOTE:</b> Y-USA offices, login as normal. If you are working remotely, you must connect to the VPN before changing your password.</li>
+  			<li><b>NOTE:</b> Users in the main office, login as normal. If you are working remotely, you must connect to the VPN before changing your password.</li>
 		</ul>
   <li>Log onto your computer as usual and make sure you are connected to the internet.</li>
   <li>Press Ctrl-Alt-Del and click on ""Change Password"".</li>
@@ -806,7 +808,7 @@ To change your password, follow the method below:
 <ol>
   <li>If you are not in the office, logon and connect to VPN.</li>
 		<ul>
-  			<li><b>NOTE:</b> Y-USA offices, login as normal. If you are working remotely, you must connect to the VPN before changing your password.</li>
+  			<li><b>NOTE:</b> Users in the main office, login as normal. If you are working remotely, you must connect to the VPN before changing your password.</li>
 		</ul>
   <li>Log onto your computer as usual and make sure you are connected to the internet.</li>
   <li>Press Ctrl-Alt-Del and click on ""Change Password"".</li>
